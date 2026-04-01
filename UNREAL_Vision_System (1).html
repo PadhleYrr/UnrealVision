@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>UNREAL — Vision System</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Syncopate:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --c1:#00f5ff;--c2:#7b2fff;--c3:#ff2d7a;--c4:#00ff9d;
+  --bg:#030508;--bg2:#060a10;--bg3:#0a0f1a;--bg4:#0d1420;
+  --border:rgba(0,245,255,0.18);--border2:rgba(0,245,255,0.07);
+  --glow:rgba(0,245,255,0.35);
+  --mono:'Share Tech Mono',monospace;
+  --title:'Syncopate',sans-serif;
+  --body:'Rajdhani',sans-serif;
+}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--c1);font-family:var(--body);overflow:hidden;}
+
+/* BOOT */
+#boot{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:24px;
+  background-image:radial-gradient(ellipse 80% 60% at 50% 50%,rgba(0,245,255,0.04),transparent 70%),
+    repeating-linear-gradient(0deg,transparent,transparent 49px,rgba(0,245,255,0.025) 50px),
+    repeating-linear-gradient(90deg,transparent,transparent 49px,rgba(0,245,255,0.025) 50px);}
+#boot-logo{font-family:var(--title);font-size:clamp(36px,8vw,80px);font-weight:700;letter-spacing:16px;color:var(--c1);
+  text-shadow:0 0 30px var(--glow),0 0 80px rgba(0,245,255,0.12);animation:bPulse 2s ease-in-out infinite alternate;}
+@keyframes bPulse{from{text-shadow:0 0 20px var(--glow)}to{text-shadow:0 0 50px var(--c1),0 0 100px var(--glow)}}
+#boot-tag{font-size:10px;letter-spacing:5px;color:rgba(0,245,255,0.35);font-family:var(--mono);}
+#boot-track{width:320px;height:1px;background:rgba(0,245,255,0.1);}
+#boot-bar{height:1px;width:0%;background:linear-gradient(90deg,transparent,var(--c2),var(--c1));transition:width 0.12s linear;position:relative;}
+#boot-bar::after{content:'';position:absolute;right:-1px;top:-2px;width:4px;height:5px;background:var(--c1);border-radius:50%;box-shadow:0 0 8px var(--c1);}
+#boot-pct{font-family:var(--mono);font-size:8px;color:rgba(0,245,255,0.4);margin-top:5px;text-align:right;letter-spacing:1px;}
+#boot-log{font-family:var(--mono);font-size:10px;color:rgba(0,245,255,0.45);letter-spacing:1px;min-height:18px;text-align:center;}
+.boot-chips{display:flex;gap:14px;}
+.boot-chips span{font-family:var(--mono);font-size:7px;color:rgba(0,245,255,0.2);letter-spacing:2px;border:1px solid rgba(0,245,255,0.1);padding:3px 8px;border-radius:2px;}
+
+/* PERMISSION OVERLAY */
+#perm-overlay{position:fixed;inset:0;background:rgba(3,5,8,0.95);z-index:8000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(10px);}
+#perm-box{background:var(--bg3);border:1px solid rgba(0,245,255,0.3);border-radius:14px;padding:44px 40px;max-width:440px;width:92%;text-align:center;position:relative;overflow:hidden;}
+#perm-box::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--c1),transparent);}
+.perm-icon-wrap{width:72px;height:72px;border-radius:50%;border:1px solid rgba(0,245,255,0.3);display:flex;align-items:center;justify-content:center;margin:0 auto 22px;position:relative;}
+.perm-icon-wrap::before{content:'';position:absolute;inset:-5px;border-radius:50%;border:1px solid rgba(0,245,255,0.12);animation:pRing 2.5s ease-in-out infinite;}
+@keyframes pRing{0%,100%{transform:scale(1);opacity:0.5}50%{transform:scale(1.08);opacity:0.15}}
+.perm-eye{width:32px;height:22px;border-radius:50%;border:2px solid var(--c1);display:flex;align-items:center;justify-content:center;}
+.perm-eye::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--c1);box-shadow:0 0 10px var(--c1);animation:ePulse 2s infinite;}
+@keyframes ePulse{0%,100%{transform:scale(1)}50%{transform:scale(0.65)}}
+#perm-box h2{font-family:var(--title);font-size:13px;letter-spacing:4px;color:var(--c1);margin-bottom:12px;}
+#perm-box p{font-size:13px;color:rgba(0,245,255,0.5);line-height:1.75;margin-bottom:26px;font-weight:300;}
+.perm-btns{display:flex;gap:10px;justify-content:center;}
+.pbtn{font-family:var(--body);font-size:11px;letter-spacing:3px;font-weight:600;padding:12px 26px;border-radius:6px;cursor:pointer;transition:all 0.2s;border:none;}
+.pbtn-go{background:linear-gradient(135deg,var(--c2),var(--c1));color:#000;}
+.pbtn-go:hover{transform:translateY(-1px);box-shadow:0 4px 30px rgba(0,245,255,0.35);}
+.pbtn-skip{background:transparent;border:1px solid var(--border);color:rgba(0,245,255,0.45);font-family:var(--body);}
+.pbtn-skip:hover{border-color:var(--c1);color:var(--c1);}
+#perm-err{font-size:10px;color:var(--c3);margin-top:14px;letter-spacing:1px;display:none;line-height:1.8;}
+#perm-err-hint{font-size:9px;color:rgba(0,245,255,0.4);margin-top:6px;letter-spacing:1px;display:none;line-height:1.9;}
+#perm-upload-fallback{display:none;margin-top:14px;}
+.pbtn-fallback{background:transparent;border:1px solid rgba(0,245,255,0.3);color:rgba(0,245,255,0.6);font-family:var(--body);font-size:10px;letter-spacing:2px;font-weight:600;padding:10px 22px;border-radius:6px;cursor:pointer;transition:all 0.2s;}
+.pbtn-fallback:hover{border-color:var(--c1);color:var(--c1);}
+
+/* SHELL */
+#shell{display:none;width:100vw;height:100vh;flex-direction:column;}
+
+/* TOPBAR */
+#topbar{height:52px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--border2);background:rgba(3,5,8,0.9);backdrop-filter:blur(20px);flex-shrink:0;z-index:100;}
+.tb-brand{min-width:210px;display:flex;flex-direction:column;gap:2px;}
+.tb-brand-row{display:flex;align-items:center;gap:8px;}
+.tb-name{font-family:var(--title);font-size:20px;font-weight:700;letter-spacing:6px;color:var(--c1);}
+.tb-badge{background:linear-gradient(135deg,var(--c2),var(--c1));color:#000;font-family:var(--mono);font-size:6px;letter-spacing:1px;padding:2px 5px;border-radius:2px;font-weight:700;}
+.tb-sub{font-family:var(--mono);font-size:7px;letter-spacing:3px;color:rgba(0,245,255,0.25);}
+.tb-sep{width:1px;height:26px;background:var(--border2);margin:0 18px;}
+.tb-stats{display:flex;gap:26px;flex:1;justify-content:center;}
+.tb-s{text-align:center;}
+.tb-s-v{font-family:var(--title);font-size:17px;font-weight:700;color:var(--c1);display:block;line-height:1;}
+.tb-s-l{font-family:var(--mono);font-size:6px;letter-spacing:2.5px;color:rgba(0,245,255,0.3);margin-top:2px;display:block;}
+.tb-right{display:flex;align-items:center;gap:12px;min-width:210px;justify-content:flex-end;}
+.pulsedot{width:6px;height:6px;border-radius:50%;background:var(--c4);animation:dp 1.5s infinite;}
+@keyframes dp{0%,100%{opacity:1;box-shadow:0 0 5px var(--c4)}50%{opacity:0.25;box-shadow:none}}
+.tbst{font-family:var(--mono);font-size:8px;letter-spacing:1.5px;color:rgba(0,245,255,0.4);}
+#clock{font-family:var(--mono);font-size:11px;color:rgba(0,245,255,0.55);letter-spacing:2px;}
+
+/* BODY */
+#body{display:flex;flex:1;overflow:hidden;}
+
+/* CAM PANEL */
+#cam-panel{flex:1;position:relative;background:#000;overflow:hidden;}
+#video{width:100%;height:100%;object-fit:cover;display:none;}
+#detection-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;}
+#upload-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none;background:#000;}
+
+/* HUD CORNERS */
+.hc{position:absolute;width:26px;height:26px;border-color:var(--c1);border-style:solid;z-index:10;opacity:0.45;}
+.hc.tl{top:14px;left:14px;border-width:2px 0 0 2px;}
+.hc.tr{top:14px;right:14px;border-width:2px 2px 0 0;}
+.hc.bl{bottom:14px;left:14px;border-width:0 0 2px 2px;}
+.hc.br{bottom:14px;right:14px;border-width:0 2px 2px 0;}
+
+/* SCANLINE */
+#scanline{position:absolute;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,245,255,0.6) 30%,var(--c1) 50%,rgba(0,245,255,0.6) 70%,transparent);box-shadow:0 0 10px var(--c1);top:-1px;z-index:10;display:none;animation:sc 3s linear infinite;}
+@keyframes sc{0%{top:-1px;opacity:0}4%{opacity:1}96%{opacity:1}100%{top:100%;opacity:0}}
+
+/* IDLE */
+#idle-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;z-index:20;
+  background:radial-gradient(ellipse at center,rgba(0,245,255,0.025),transparent 65%);}
+.idle-rings{position:relative;width:108px;height:108px;display:flex;align-items:center;justify-content:center;}
+.ir{position:absolute;border-radius:50%;border:1px solid;animation:rsp 6s linear infinite;}
+.ir:nth-child(1){width:108px;height:108px;border-color:rgba(0,245,255,0.12);animation-duration:9s;}
+.ir:nth-child(2){width:78px;height:78px;border-color:rgba(0,245,255,0.22);animation-direction:reverse;animation-duration:6s;}
+.ir:nth-child(3){width:52px;height:52px;border-color:rgba(0,245,255,0.38);animation-duration:4s;}
+@keyframes rsp{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.ir-core{width:20px;height:14px;border-radius:50%;border:1.5px solid var(--c1);display:flex;align-items:center;justify-content:center;z-index:1;}
+.ir-core::after{content:'';width:7px;height:7px;border-radius:50%;background:var(--c1);box-shadow:0 0 12px var(--c1);animation:ePulse 2s ease-in-out infinite;}
+.idle-title{font-family:var(--title);font-size:clamp(13px,1.8vw,17px);font-weight:700;letter-spacing:6px;color:var(--c1);}
+.idle-desc{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:rgba(0,245,255,0.3);text-align:center;line-height:2;}
+.idle-btns{display:flex;gap:10px;}
+.ibtn{background:transparent;border:1px solid rgba(0,245,255,0.4);color:var(--c1);font-family:var(--body);font-size:10px;font-weight:600;padding:11px 24px;border-radius:5px;cursor:pointer;letter-spacing:3px;transition:all 0.2s;position:relative;overflow:hidden;}
+.ibtn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,245,255,0.1),rgba(123,47,255,0.05));opacity:0;transition:opacity 0.2s;}
+.ibtn:hover::before{opacity:1;}
+.ibtn:hover{border-color:var(--c1);box-shadow:0 0 22px rgba(0,245,255,0.2);transform:translateY(-1px);}
+
+/* OVERLAYS */
+#live-badge{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:20;display:none;align-items:center;gap:6px;background:rgba(3,5,8,0.82);border:1px solid rgba(255,45,122,0.35);border-radius:20px;padding:4px 12px;backdrop-filter:blur(8px);}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--c3);animation:dp 1s infinite;}
+#live-badge span{font-family:var(--mono);font-size:8px;color:var(--c3);letter-spacing:2px;}
+#stop-btn{position:absolute;top:14px;right:14px;z-index:30;background:rgba(3,5,8,0.82);border:1px solid rgba(255,45,122,0.35);color:var(--c3);font-family:var(--mono);font-size:8px;padding:6px 14px;border-radius:4px;cursor:pointer;letter-spacing:2px;display:none;backdrop-filter:blur(8px);transition:all 0.15s;}
+#stop-btn:hover{background:rgba(255,45,122,0.1);}
+#obj-badge{position:absolute;top:14px;left:14px;z-index:20;background:rgba(3,5,8,0.82);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-family:var(--mono);font-size:8px;letter-spacing:2px;display:none;backdrop-filter:blur(8px);}
+#fps-badge{position:absolute;bottom:62px;left:14px;z-index:20;font-family:var(--mono);font-size:8px;color:rgba(0,245,255,0.35);letter-spacing:1px;display:none;}
+
+/* CAPTURE BTN */
+#capture-wrap{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);z-index:30;display:none;}
+#capture-btn{width:56px;height:56px;border-radius:50%;border:2px solid var(--c1);background:rgba(0,0,0,0.5);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(0,245,255,0.18),inset 0 0 16px rgba(0,245,255,0.04);transition:all 0.15s;}
+#capture-btn:hover{box-shadow:0 0 40px rgba(0,245,255,0.45);}
+#cap-inner{width:38px;height:38px;border-radius:50%;background:radial-gradient(circle,var(--c1),var(--c2));}
+#capture-btn.flash{animation:cfla 0.22s;}
+@keyframes cfla{0%{box-shadow:0 0 60px var(--c1)}100%{box-shadow:0 0 20px rgba(0,245,255,0.2)}}
+
+/* CAM INFO BAR */
+#cam-info{position:absolute;bottom:0;left:0;right:0;padding:11px 16px;background:linear-gradient(transparent,rgba(3,5,8,0.88));display:flex;justify-content:space-between;z-index:10;pointer-events:none;}
+.ci .cil{font-family:var(--mono);font-size:6px;letter-spacing:2px;color:rgba(0,245,255,0.25);margin-bottom:2px;}
+.ci .civ{font-family:var(--mono);font-size:10px;color:rgba(0,245,255,0.6);}
+
+/* TOOLTIP LAYER */
+#tooltip-layer{position:absolute;inset:0;pointer-events:none;z-index:8;}
+.ott{position:absolute;pointer-events:none;transform:translateX(-50%);animation:tin 0.18s ease-out forwards;}
+@keyframes tin{from{opacity:0;transform:translateX(-50%) translateY(5px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.ott-inner{background:rgba(3,5,8,0.9);border:1px solid;border-radius:6px;padding:8px 12px;white-space:nowrap;backdrop-filter:blur(14px);}
+.ott-name{font-family:var(--title);font-size:9px;font-weight:700;letter-spacing:2px;margin-bottom:5px;}
+.ott-row{display:flex;gap:6px;align-items:center;flex-wrap:nowrap;}
+.ott-chip{font-family:var(--mono);font-size:7px;letter-spacing:1px;padding:1px 5px;border-radius:2px;border:1px solid;}
+.ott-pct{font-family:var(--title);font-size:10px;font-weight:700;}
+.ott-dist{font-family:var(--mono);font-size:7px;color:rgba(0,245,255,0.45);margin-top:4px;}
+.ott-arr-down{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;}
+.ott-arr-up{position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;}
+
+/* SIDEBAR */
+#sidebar{width:296px;flex-shrink:0;border-left:1px solid var(--border2);background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;}
+@media(max-width:660px){#sidebar{display:none;}}
+.stabs{display:flex;border-bottom:1px solid var(--border2);}
+.stab{flex:1;padding:10px 4px;font-family:var(--body);font-size:8px;font-weight:600;letter-spacing:2.5px;text-align:center;cursor:pointer;color:rgba(0,245,255,0.28);border-bottom:2px solid transparent;transition:all 0.15s;}
+.stab.on{color:var(--c1);border-bottom-color:var(--c1);}
+.stab:hover:not(.on){color:rgba(0,245,255,0.5);}
+
+#tab-controls{padding:13px;overflow-y:auto;flex:1;scrollbar-width:thin;scrollbar-color:var(--border) transparent;}
+.psect{margin-bottom:16px;}
+.plbl{font-family:var(--mono);font-size:7px;letter-spacing:3px;color:rgba(0,245,255,0.28);margin-bottom:7px;display:flex;align-items:center;gap:6px;}
+.plbl::after{content:'';flex:1;height:1px;background:var(--border2);}
+.bgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+.sbb{background:transparent;border:1px solid var(--border2);color:rgba(0,245,255,0.45);font-family:var(--body);font-size:8px;font-weight:500;padding:8px 5px;border-radius:4px;cursor:pointer;letter-spacing:1.5px;transition:all 0.14s;text-align:center;}
+.sbb:hover,.sbb.act{background:rgba(0,245,255,0.06);border-color:rgba(0,245,255,0.4);color:var(--c1);}
+.sbb.act{background:rgba(0,245,255,0.08);border-color:var(--c1);box-shadow:0 0 6px rgba(0,245,255,0.08);}
+input[type=range]{width:100%;-webkit-appearance:none;height:2px;background:rgba(0,245,255,0.1);border-radius:1px;outline:none;margin:8px 0 3px;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--c1);cursor:pointer;box-shadow:0 0 8px var(--glow);}
+.rrow{display:flex;justify-content:space-between;font-family:var(--mono);font-size:7px;color:rgba(0,245,255,0.3);}
+
+#tab-detections{flex:1;overflow:hidden;display:none;flex-direction:column;}
+#tab-history{flex:1;overflow:hidden;display:none;flex-direction:column;}
+.det-hdr{padding:9px 13px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);}
+.det-hdr-lbl{font-family:var(--mono);font-size:7px;letter-spacing:2.5px;color:rgba(0,245,255,0.3);}
+#det-count,#hist-count{font-family:var(--title);font-size:12px;color:var(--c1);}
+#det-list,#hist-list{flex:1;overflow-y:auto;padding:7px;scrollbar-width:thin;scrollbar-color:var(--border) transparent;}
+
+.det-card{background:rgba(0,245,255,0.025);border:1px solid var(--border2);border-radius:6px;padding:10px 11px;margin-bottom:5px;cursor:pointer;transition:all 0.13s;}
+.det-card:hover{border-color:rgba(0,245,255,0.32);background:rgba(0,245,255,0.05);}
+.dct{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;}
+.dcn{font-family:var(--title);font-size:10px;letter-spacing:1.5px;font-weight:700;}
+.dcc{font-family:var(--title);font-size:13px;font-weight:700;text-align:right;line-height:1;}
+.dccl{font-family:var(--mono);font-size:6px;color:rgba(0,245,255,0.3);letter-spacing:1px;margin-top:1px;}
+.cbar{height:1.5px;background:rgba(0,245,255,0.07);border-radius:1px;margin:5px 0;}
+.cfill{height:100%;border-radius:1px;transition:width 0.4s;}
+.dcm{font-family:var(--mono);font-size:7px;color:rgba(0,245,255,0.38);margin-top:3px;line-height:1.6;}
+.dctags{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;}
+.dtag{font-family:var(--mono);font-size:6px;padding:2px 5px;border-radius:2px;letter-spacing:1px;border:1px solid;}
+.dtag-s{background:rgba(0,255,157,0.05);color:#00ff9d;border-color:rgba(0,255,157,0.18);}
+.dtag-w{background:rgba(255,45,122,0.05);color:var(--c3);border-color:rgba(255,45,122,0.18);}
+.dtag-i{background:rgba(0,245,255,0.04);color:rgba(0,245,255,0.55);border-color:var(--border);}
+.empty-msg{text-align:center;color:rgba(0,245,255,0.18);font-family:var(--mono);font-size:9px;letter-spacing:1px;padding:36px 14px;line-height:2.5;}
+
+.hist-card{display:flex;gap:8px;padding:8px 10px;border:1px solid var(--border2);border-radius:5px;margin-bottom:5px;cursor:pointer;background:rgba(0,245,255,0.02);transition:all 0.13s;}
+.hist-card:hover{border-color:rgba(0,245,255,0.28);}
+.hist-thumb{width:50px;height:36px;object-fit:cover;border-radius:3px;border:1px solid var(--border);flex-shrink:0;background:#111;}
+.hist-title{font-family:var(--body);font-size:10px;font-weight:600;color:var(--c1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hist-sub{font-family:var(--mono);font-size:7px;color:rgba(0,245,255,0.32);margin-top:2px;}
+
+#statusbar{display:flex;justify-content:space-between;padding:5px 13px;border-top:1px solid var(--border2);font-family:var(--mono);font-size:7px;color:rgba(0,245,255,0.28);letter-spacing:1px;flex-shrink:0;background:rgba(3,5,8,0.5);}
+
+/* DETAIL MODAL */
+#detail-popup{position:fixed;inset:0;background:rgba(3,5,8,0.9);z-index:200;display:none;align-items:center;justify-content:center;backdrop-filter:blur(12px);}
+#detail-box{background:var(--bg3);border:1px solid rgba(0,245,255,0.28);border-radius:12px;padding:28px;max-width:476px;width:92%;position:relative;box-shadow:0 0 60px rgba(0,245,255,0.06);}
+#detail-box::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--c1),transparent);}
+#detail-title{font-family:var(--title);font-size:17px;font-weight:700;letter-spacing:4px;margin-bottom:18px;}
+#detail-close{position:absolute;top:14px;right:14px;background:transparent;border:1px solid var(--border);color:rgba(0,245,255,0.45);font-family:var(--mono);font-size:8px;padding:4px 10px;cursor:pointer;border-radius:3px;letter-spacing:1px;transition:all 0.14s;}
+#detail-close:hover{border-color:var(--c1);color:var(--c1);}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+.df{background:rgba(0,245,255,0.025);border:1px solid var(--border2);border-radius:4px;padding:9px 11px;}
+.dk{font-family:var(--mono);font-size:6px;letter-spacing:2px;color:rgba(0,245,255,0.28);margin-bottom:4px;}
+.dv{font-family:var(--body);font-size:12px;font-weight:600;}
+
+/* NOTIFY */
+#notify{position:fixed;top:62px;left:50%;transform:translateX(-50%);background:rgba(3,5,8,0.92);border:1px solid var(--c1);border-radius:4px;padding:7px 18px;font-family:var(--mono);font-size:9px;letter-spacing:1.5px;z-index:300;display:none;white-space:nowrap;box-shadow:0 0 20px rgba(0,245,255,0.12);}
+</style>
+</head>
+<body>
+
+<!-- BOOT -->
+<div id="boot">
+  <div id="boot-logo">UNREAL</div>
+  <div id="boot-tag">NEURAL VISION INTELLIGENCE</div>
+  <div style="width:320px;">
+    <div id="boot-track"><div id="boot-bar"></div></div>
+    <div id="boot-pct">0%</div>
+  </div>
+  <div id="boot-log">INITIALIZING CORE SYSTEMS...</div>
+  <div class="boot-chips">
+    <span>TENSORFLOW.JS</span><span>COCO-SSD</span><span id="tf-backend">WEBGL</span>
+  </div>
+</div>
+
+<!-- PERMISSION OVERLAY -->
+<div id="perm-overlay">
+  <div id="perm-box">
+    <div class="perm-icon-wrap"><div class="perm-eye"></div></div>
+    <h2>CAMERA ACCESS REQUIRED</h2>
+    <p>UNREAL Vision needs camera access to enable real-time neural object detection and live tracking.</p>
+    <div class="perm-btns">
+      <button class="pbtn pbtn-go" onclick="requestCamera()">GRANT ACCESS</button>
+      <button class="pbtn pbtn-skip" onclick="denyCamera()">USE UPLOAD</button>
+    </div>
+    <div id="perm-err"></div>
+  <div id="perm-err-hint"></div>
+  <div id="perm-upload-fallback">
+    <button class="pbtn pbtn-fallback" onclick="document.getElementById('perm-overlay').style.display='none';triggerUpload();">↑ USE IMAGE UPLOAD INSTEAD</button>
+  </div>
+  </div>
+</div>
+
+<!-- SHELL -->
+<div id="shell">
+  <div id="topbar">
+    <div class="tb-brand">
+      <div class="tb-brand-row">
+        <div class="tb-name">UNREAL</div>
+        <div class="tb-badge">v3.0</div>
+      </div>
+      <div class="tb-sub">VISION INTELLIGENCE</div>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-stats">
+      <div class="tb-s"><span class="tb-s-v" id="stat-obj">0</span><span class="tb-s-l">OBJECTS</span></div>
+      <div class="tb-s"><span class="tb-s-v" id="stat-conf">--</span><span class="tb-s-l">AVG CONF</span></div>
+      <div class="tb-s"><span class="tb-s-v" id="stat-scans">0</span><span class="tb-s-l">SCANS</span></div>
+      <div class="tb-s"><span class="tb-s-v" id="stat-fps">--</span><span class="tb-s-l">FPS</span></div>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-right">
+      <div class="pulsedot"></div>
+      <div class="tbst">ONLINE</div>
+      <div id="clock">--:--:--</div>
+    </div>
+  </div>
+
+  <div id="body">
+    <div id="cam-panel">
+      <div class="hc tl"></div><div class="hc tr"></div>
+      <div class="hc bl"></div><div class="hc br"></div>
+      <div id="scanline"></div>
+      <div id="live-badge"><div class="live-dot"></div><span>LIVE</span></div>
+      <div id="fps-badge">0 FPS</div>
+      <div id="obj-badge"><span id="badge-count">0</span> OBJECTS</div>
+      <button id="stop-btn" onclick="stopCamera()">■ STOP</button>
+      <video id="video" autoplay playsinline muted></video>
+      <img id="upload-img" alt="scan"/>
+      <canvas id="detection-canvas"></canvas>
+      <div id="tooltip-layer"></div>
+      <div id="capture-wrap">
+        <div id="capture-btn" onclick="captureFrame()"><div id="cap-inner"></div></div>
+      </div>
+      <div id="cam-info">
+        <div class="ci"><div class="cil">RESOLUTION</div><div class="civ" id="res-val">--</div></div>
+        <div class="ci"><div class="cil">MODE</div><div class="civ" id="mode-val">STANDBY</div></div>
+        <div class="ci"><div class="cil">ENGINE</div><div class="civ">COCO-SSD</div></div>
+        <div class="ci"><div class="cil">BACKEND</div><div class="civ" id="backend-val">--</div></div>
+      </div>
+      <div id="idle-overlay">
+        <div class="idle-rings">
+          <div class="ir"></div><div class="ir"></div><div class="ir"></div>
+          <div class="ir-core"></div>
+        </div>
+        <div class="idle-title">UNREAL VISION</div>
+        <div class="idle-desc">80-CLASS NEURAL DETECTION · REAL-TIME TRACKING<br>RAY BORDER TRACING · HOVER INTELLIGENCE</div>
+        <div class="idle-btns">
+          <button class="ibtn" onclick="showPermOverlay()">CAMERA</button>
+          <button class="ibtn" onclick="triggerUpload()">UPLOAD</button>
+        </div>
+      </div>
+      <input type="file" id="file-in" accept="image/*" style="display:none" onchange="handleUpload(event)"/>
+    </div>
+
+    <div id="sidebar">
+      <div class="stabs">
+        <div class="stab on" onclick="switchTab('controls')" id="stab-controls">CONTROLS</div>
+        <div class="stab" onclick="switchTab('detections')" id="stab-detections">TARGETS</div>
+        <div class="stab" onclick="switchTab('history')" id="stab-history">HISTORY</div>
+      </div>
+      <div id="tab-controls">
+        <div class="psect">
+          <div class="plbl">CAMERA</div>
+          <div class="bgrid">
+            <button class="sbb" onclick="showPermOverlay()">▶ CAMERA</button>
+            <button class="sbb" onclick="stopCamera()">■ STOP</button>
+            <button class="sbb" onclick="triggerUpload()">↑ UPLOAD</button>
+            <button class="sbb" onclick="captureFrame()">◉ CAPTURE</button>
+          </div>
+        </div>
+        <div class="psect">
+          <div class="plbl">DETECTION MODE</div>
+          <div class="bgrid">
+            <button class="sbb act" id="btn-live" onclick="setDetMode('live')">◉ LIVE</button>
+            <button class="sbb" id="btn-manual" onclick="setDetMode('manual')">✦ MANUAL</button>
+          </div>
+        </div>
+        <div class="psect">
+          <div class="plbl">CONFIDENCE THRESHOLD</div>
+          <input type="range" id="conf-thresh" min="10" max="95" value="50" oninput="updateThresh(this.value)"/>
+          <div class="rrow"><span>10%</span><span id="thresh-val">50%</span><span>95%</span></div>
+        </div>
+        <div class="psect">
+          <div class="plbl">OVERLAY</div>
+          <div class="bgrid">
+            <button class="sbb act" id="obtn-box" onclick="toggleOverlay('box',this)">BORDERS</button>
+            <button class="sbb act" id="obtn-label" onclick="toggleOverlay('label',this)">LABELS</button>
+            <button class="sbb act" id="obtn-conf" onclick="toggleOverlay('conf',this)">CONFIDENCE</button>
+            <button class="sbb act" id="obtn-center" onclick="toggleOverlay('center',this)">CROSSHAIR</button>
+          </div>
+        </div>
+        <div class="psect">
+          <div class="plbl">ACTIONS</div>
+          <div class="bgrid">
+            <button class="sbb" onclick="clearDetections()">✕ CLEAR</button>
+            <button class="sbb" onclick="saveSnapshot()">⊡ SNAP</button>
+            <button class="sbb" onclick="exportReport()">↓ EXPORT</button>
+            <button class="sbb" onclick="clearHistory()">⟳ CLR HIST</button>
+          </div>
+        </div>
+      </div>
+      <div id="tab-detections">
+        <div class="det-hdr">
+          <span class="det-hdr-lbl">DETECTED TARGETS</span>
+          <span id="det-count">0 ITEMS</span>
+        </div>
+        <div id="det-list"><div class="empty-msg">NO TARGETS ACQUIRED</div></div>
+      </div>
+      <div id="tab-history">
+        <div class="det-hdr">
+          <span class="det-hdr-lbl">SCAN HISTORY</span>
+          <span id="hist-count">0 SCANS</span>
+        </div>
+        <div id="hist-list"><div class="empty-msg">NO SCANS RECORDED</div></div>
+      </div>
+      <div id="statusbar">
+        <span id="status-msg">NEURAL ENGINE READY</span>
+        <span id="scan-count-sb">SCANS: 0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DETAIL POPUP -->
+<div id="detail-popup" onclick="if(event.target===this)closeDetail()">
+  <div id="detail-box">
+    <button id="detail-close" onclick="closeDetail()">✕ CLOSE</button>
+    <div id="detail-title"></div>
+    <div id="detail-content"></div>
+  </div>
+</div>
+
+<div id="notify"></div>
+
+<script>
+// STATE
+let model=null,stream=null,detMode='live',confThresh=0.5;
+let liveLoop=null,scanCount=0,history=[],currentDetections=[];
+let overlayOpts={box:true,label:true,conf:true,center:true};
+let fpsCounter=0,fpsTime=Date.now(),currentFPS=0,isProcessing=false,animFrame=0;
+
+const video=document.getElementById('video');
+const canvas=document.getElementById('detection-canvas');
+const ctx=canvas.getContext('2d');
+const uploadImg=document.getElementById('upload-img');
+const ttLayer=document.getElementById('tooltip-layer');
+
+const catMap={person:'HUMAN',bicycle:'VEHICLE',car:'VEHICLE',motorcycle:'VEHICLE',airplane:'VEHICLE',bus:'VEHICLE',train:'VEHICLE',truck:'VEHICLE',boat:'VEHICLE','traffic light':'INFRA','fire hydrant':'INFRA','stop sign':'INFRA','parking meter':'INFRA',bench:'FURNITURE',bird:'ANIMAL',cat:'ANIMAL',dog:'ANIMAL',horse:'ANIMAL',sheep:'ANIMAL',cow:'ANIMAL',elephant:'ANIMAL',bear:'ANIMAL',zebra:'ANIMAL',giraffe:'ANIMAL',backpack:'GEAR',umbrella:'GEAR',handbag:'GEAR',tie:'GEAR',suitcase:'GEAR',frisbee:'SPORTS',skis:'SPORTS',snowboard:'SPORTS','sports ball':'SPORTS',kite:'SPORTS','baseball bat':'SPORTS','baseball glove':'SPORTS',skateboard:'SPORTS',surfboard:'SPORTS','tennis racket':'SPORTS',bottle:'F&D','wine glass':'F&D',cup:'F&D',fork:'F&D',knife:'F&D',spoon:'F&D',bowl:'F&D',banana:'F&D',apple:'F&D',sandwich:'F&D',orange:'F&D',broccoli:'F&D',carrot:'F&D','hot dog':'F&D',pizza:'F&D',donut:'F&D',cake:'F&D',chair:'FURNITURE',couch:'FURNITURE','potted plant':'NATURE',bed:'FURNITURE','dining table':'FURNITURE',toilet:'FIXTURE',tv:'TECH',laptop:'TECH',mouse:'TECH',remote:'TECH',keyboard:'TECH','cell phone':'TECH',microwave:'APPLIANCE',oven:'APPLIANCE',toaster:'APPLIANCE',sink:'FIXTURE',refrigerator:'APPLIANCE',book:'OBJECT',clock:'OBJECT',vase:'OBJECT',scissors:'OBJECT','teddy bear':'OBJECT','hair drier':'OBJECT',toothbrush:'OBJECT'};
+const catColors={HUMAN:'#ff2d7a',VEHICLE:'#00f5ff',ANIMAL:'#00ff9d',TECH:'#a855f7','F&D':'#facc15',FURNITURE:'#60a5fa',SPORTS:'#fb923c',GEAR:'#e879f9',INFRA:'#94a3b8',NATURE:'#4ade80',APPLIANCE:'#38bdf8',FIXTURE:'#94a3b8',OBJECT:'#00f5ff'};
+function getColor(l){return catColors[catMap[l]||'OBJECT']||'#00f5ff';}
+function getCat(l){return catMap[l]||'OBJECT';}
+function estimateDist(b,W,H){const a=(b[2]/W)*(b[3]/H);if(a>0.5)return'<0.5m';if(a>0.25)return'~1m';if(a>0.1)return'~2-3m';if(a>0.04)return'~5m';if(a>0.01)return'~10m';return'>15m';}
+function estimateSize(b,W,H){return`${Math.round(b[2]/W*100)}%×${Math.round(b[3]/H*100)}%`;}
+
+// BOOT
+const bootLogs=['LOADING TENSORFLOW.JS RUNTIME...','ALLOCATING GPU/WEBGL BUFFERS...','FETCHING COCO-SSD MODEL WEIGHTS...','LOADING MOBILENETV2 BACKBONE...','INITIALIZING 80-CLASS DETECTOR...','CALIBRATING INFERENCE THRESHOLDS...','MOUNTING NEURAL OVERLAY SYSTEMS...','UNREAL VISION ONLINE.'];
+async function boot(){
+  const bar=document.getElementById('boot-bar'),pct=document.getElementById('boot-pct'),log=document.getElementById('boot-log');
+  for(let i=0;i<bootLogs.length-1;i++){
+    log.textContent=bootLogs[i];
+    const p=Math.round((i+1)/bootLogs.length*78);
+    bar.style.width=p+'%';pct.textContent=p+'%';
+    await sleep(270+Math.random()*170);
+  }
+  try{
+    model=await cocoSsd.load({base:'mobilenet_v2'});
+    const b=tf.getBackend().toUpperCase();
+    document.getElementById('tf-backend').textContent=b;
+    document.getElementById('backend-val').textContent=b;
+    log.textContent=bootLogs[bootLogs.length-1];
+    bar.style.width='100%';pct.textContent='100%';
+    await sleep(480);
+    const bootEl=document.getElementById('boot');
+    bootEl.style.transition='opacity 0.65s';bootEl.style.opacity='0';
+    await sleep(650);
+    bootEl.style.display='none';
+    document.getElementById('shell').style.display='flex';
+    setStatus('NEURAL ENGINE READY');setInterval(updateClock,1000);updateClock();
+  }catch(e){log.textContent='ERROR: '+e.message;log.style.color='#ff2d7a';}
+}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function updateClock(){document.getElementById('clock').textContent=new Date().toTimeString().slice(0,8);}
+
+// PERMISSION + CAMERA
+function showPermOverlay(){
+  document.getElementById('perm-err').style.display='none';
+  document.getElementById('perm-err-hint').style.display='none';
+  document.getElementById('perm-upload-fallback').style.display='none';
+  document.getElementById('perm-overlay').style.display='flex';
+}
+function denyCamera(){document.getElementById('perm-overlay').style.display='none';triggerUpload();}
+async function requestCamera(){
+  const err=document.getElementById('perm-err');
+  const hint=document.getElementById('perm-err-hint');
+  const fallback=document.getElementById('perm-upload-fallback');
+  err.style.display='none';hint.style.display='none';fallback.style.display='none';
+  try{
+    // First try ideal constraints
+    let s=null;
+    try{
+      s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}});
+    }catch(e1){
+      if(e1.name!=='NotAllowedError'&&e1.name!=='NotFoundError'){
+        // Try simpler fallback constraints
+        s=await navigator.mediaDevices.getUserMedia({video:true});
+      } else { throw e1; }
+    }
+    stream=s;
+    document.getElementById('perm-overlay').style.display='none';
+    activateCameraUI();
+  }catch(e){
+    err.style.display='block';
+    fallback.style.display='block';
+    if(e.name==='NotAllowedError'){
+      err.textContent='⚠ PERMISSION DENIED';
+      hint.style.display='block';
+      // Detect if running as local file
+      if(location.protocol==='file:'){
+        hint.innerHTML='Local files cannot access the camera.<br>Open this file via a local server or use the upload option below.';
+      } else {
+        hint.innerHTML='Click the camera/lock icon in your browser address bar<br>and set Camera to "Allow", then try again.';
+      }
+    } else if(e.name==='NotFoundError'){
+      err.textContent='⚠ NO CAMERA FOUND';
+      hint.style.display='block';
+      hint.textContent='No camera device detected. Use image upload instead.';
+    } else {
+      err.textContent='⚠ ERROR: '+e.message;
+    }
+  }
+}
+function activateCameraUI(){
+  video.srcObject=stream;
+  video.style.display='block';uploadImg.style.display='none';
+  document.getElementById('idle-overlay').style.display='none';
+  document.getElementById('capture-wrap').style.display='block';
+  document.getElementById('stop-btn').style.display='block';
+  document.getElementById('live-badge').style.display='flex';
+  document.getElementById('fps-badge').style.display='block';
+  document.getElementById('obj-badge').style.display='block';
+  document.getElementById('scanline').style.display='block';
+  document.getElementById('mode-val').textContent='CAMERA LIVE';
+  setStatus('CAMERA ACTIVE — REAL-TIME DETECTION RUNNING');
+  video.addEventListener('loadedmetadata',()=>{
+    document.getElementById('res-val').textContent=video.videoWidth+'×'+video.videoHeight;
+    resizeCanvas();
+    if(detMode==='live')startLiveDetection();
+  });
+  notify('CAMERA INITIALIZED');
+}
+function stopCamera(){
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  stopLiveDetection();
+  video.style.display='none';
+  document.getElementById('capture-wrap').style.display='none';
+  document.getElementById('stop-btn').style.display='none';
+  document.getElementById('live-badge').style.display='none';
+  document.getElementById('fps-badge').style.display='none';
+  document.getElementById('idle-overlay').style.display='flex';
+  document.getElementById('mode-val').textContent='STANDBY';
+  clearCanvas();clearTooltips();
+  setStatus('CAMERA STOPPED');
+}
+function resizeCanvas(){const p=document.getElementById('cam-panel');canvas.width=p.offsetWidth;canvas.height=p.offsetHeight;}
+window.addEventListener('resize',resizeCanvas);
+
+// LIVE DETECTION
+function startLiveDetection(){if(liveLoop)return;document.getElementById('scanline').style.animationPlayState='running';liveLoop=requestAnimationFrame(liveDetect);}
+function stopLiveDetection(){if(liveLoop){cancelAnimationFrame(liveLoop);liveLoop=null;}}
+async function liveDetect(){
+  if(!model||!stream||isProcessing){liveLoop=requestAnimationFrame(liveDetect);return;}
+  isProcessing=true;
+  try{
+    const preds=await model.detect(video,20,confThresh);
+    const filtered=preds.filter(p=>p.score>=confThresh);
+    currentDetections=filtered;
+    drawDetections(filtered,video.videoWidth,video.videoHeight,false);
+    renderTooltips(filtered,video.videoWidth,video.videoHeight);
+    updateDetList(filtered,video.videoWidth,video.videoHeight);
+    updateStats(filtered);
+    fpsCounter++;
+    const now=Date.now();
+    if(now-fpsTime>1000){
+      currentFPS=Math.round(fpsCounter*1000/(now-fpsTime));
+      fpsCounter=0;fpsTime=now;
+      document.getElementById('fps-badge').textContent=currentFPS+' FPS';
+      document.getElementById('stat-fps').textContent=currentFPS;
+    }
+  }catch(e){}
+  isProcessing=false;
+  if(detMode==='live'&&stream)liveLoop=requestAnimationFrame(liveDetect);
+}
+
+// CAPTURE
+async function captureFrame(){
+  if(!stream&&uploadImg.style.display==='none')return;
+  const btn=document.getElementById('capture-btn');
+  btn.classList.add('flash');setTimeout(()=>btn.classList.remove('flash'),240);
+  if(stream){
+    const hc=document.createElement('canvas');
+    hc.width=video.videoWidth;hc.height=video.videoHeight;
+    hc.getContext('2d').drawImage(video,0,0);
+    const preds=await model.detect(hc,20,confThresh);
+    currentDetections=preds.filter(p=>p.score>=confThresh);
+    drawDetections(currentDetections,video.videoWidth,video.videoHeight,true);
+    renderTooltips(currentDetections,video.videoWidth,video.videoHeight);
+    updateDetList(currentDetections,video.videoWidth,video.videoHeight);
+    updateStats(currentDetections);
+    addHistory(hc.toDataURL('image/jpeg',0.5),currentDetections,video.videoWidth,video.videoHeight);
+    scanCount++;
+    document.getElementById('stat-scans').textContent=scanCount;
+    document.getElementById('scan-count-sb').textContent='SCANS: '+scanCount;
+    notify(currentDetections.length+' OBJECTS DETECTED');
+    switchTab('detections');
+  }
+}
+
+// UPLOAD
+function triggerUpload(){document.getElementById('file-in').click();}
+async function handleUpload(e){
+  const file=e.target.files[0];if(!file)return;
+  const url=URL.createObjectURL(file);
+  uploadImg.onload=async()=>{
+    uploadImg.style.display='block';video.style.display='none';
+    document.getElementById('idle-overlay').style.display='none';
+    document.getElementById('obj-badge').style.display='block';
+    document.getElementById('mode-val').textContent='IMAGE SCAN';
+    stopLiveDetection();resizeCanvas();
+    document.getElementById('res-val').textContent=uploadImg.naturalWidth+'×'+uploadImg.naturalHeight;
+    setStatus('ANALYZING IMAGE...');
+    const preds=await model.detect(uploadImg,20,confThresh);
+    const filtered=preds.filter(p=>p.score>=confThresh);
+    currentDetections=filtered;
+    drawDetections(filtered,uploadImg.naturalWidth,uploadImg.naturalHeight,true);
+    renderTooltips(filtered,uploadImg.naturalWidth,uploadImg.naturalHeight);
+    updateDetList(filtered,uploadImg.naturalWidth,uploadImg.naturalHeight);
+    updateStats(filtered);
+    scanCount++;
+    document.getElementById('stat-scans').textContent=scanCount;
+    document.getElementById('scan-count-sb').textContent='SCANS: '+scanCount;
+    addHistory(url,filtered,uploadImg.naturalWidth,uploadImg.naturalHeight);
+    setStatus('SCAN COMPLETE — '+filtered.length+' TARGETS ACQUIRED');
+    notify(filtered.length+' TARGETS FOUND');
+    switchTab('detections');
+  };
+  uploadImg.src=url;e.target.value='';
+}
+
+// SCALE OFFSET HELPER
+function getScaleOffset(srcW,srcH){
+  const isImg=uploadImg.style.display!=='none';
+  let sx,sy,ox=0,oy=0;
+  if(isImg){
+    const pAR=canvas.width/canvas.height,iAR=srcW/srcH;
+    if(iAR>pAR){sx=canvas.width/srcW;sy=sx;oy=(canvas.height-srcH*sy)/2;}
+    else{sy=canvas.height/srcH;sx=sy;ox=(canvas.width-srcW*sx)/2;}
+  }else{
+    const pAR=canvas.width/canvas.height,vAR=srcW/srcH;
+    if(vAR>pAR){sy=canvas.height/srcH;sx=sy;ox=(canvas.width-srcW*sx)/2;}
+    else{sx=canvas.width/srcW;sy=sx;oy=(canvas.height-srcH*sy)/2;}
+  }
+  return{sx,sy,ox,oy};
+}
+
+// DRAW DETECTIONS with animated ray borders
+function drawDetections(preds,srcW,srcH,staticDraw){
+  const panel=document.getElementById('cam-panel');
+  canvas.width=panel.offsetWidth;canvas.height=panel.offsetHeight;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(!srcW||!srcH)return;
+  const{sx,sy,ox,oy}=getScaleOffset(srcW,srcH);
+  const t=Date.now()/1000;
+
+  preds.forEach((p,i)=>{
+    const[x,y,w,h]=p.bbox;
+    const rx=x*sx+ox,ry=y*sy+oy,rw=w*sx,rh=h*sy;
+    const col=getColor(p.class);
+    const pct=Math.round(p.score*100);
+    const r=parseInt(col.slice(1,3),16)||0,g=parseInt(col.slice(3,5),16)||0,b=parseInt(col.slice(5,7),16)||0;
+
+    if(overlayOpts.box){
+      // Animated dashed border (ray tracing effect)
+      if(!staticDraw){
+        const dl=Math.max(rw,rh)*0.5,gap=Math.max(rw,rh)*1.6;
+        ctx.save();ctx.strokeStyle=`rgba(${r},${g},${b},0.55)`;ctx.lineWidth=1.5;
+        ctx.setLineDash([dl,gap]);ctx.lineDashOffset=-(t*55+i*25)%((dl+gap)*2);
+        ctx.strokeRect(rx,ry,rw,rh);ctx.setLineDash([]);ctx.restore();
+      }
+
+      // Corner brackets (solid, glowing)
+      const cs=Math.min(rw,rh)*0.2,lw=2.5;
+      ctx.save();ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.shadowColor=col;ctx.shadowBlur=10;
+      ctx.beginPath();
+      ctx.moveTo(rx,ry+cs);ctx.lineTo(rx,ry);ctx.lineTo(rx+cs,ry);
+      ctx.moveTo(rx+rw-cs,ry);ctx.lineTo(rx+rw,ry);ctx.lineTo(rx+rw,ry+cs);
+      ctx.moveTo(rx+rw,ry+rh-cs);ctx.lineTo(rx+rw,ry+rh);ctx.lineTo(rx+rw-cs,ry+rh);
+      ctx.moveTo(rx+cs,ry+rh);ctx.lineTo(rx,ry+rh);ctx.lineTo(rx,ry+rh-cs);
+      ctx.stroke();ctx.restore();
+
+      // Tint fill
+      ctx.fillStyle=`rgba(${r},${g},${b},0.04)`;
+      ctx.fillRect(rx,ry,rw,rh);
+
+      // Animated inner scan beam
+      if(!staticDraw){
+        const slY=ry+(rh*((Math.sin(t*1.8+i*0.9)*0.5+0.5)));
+        ctx.save();ctx.beginPath();ctx.rect(rx,ry,rw,rh);ctx.clip();
+        ctx.strokeStyle=`rgba(${r},${g},${b},0.3)`;ctx.lineWidth=1;
+        ctx.beginPath();ctx.moveTo(rx,slY);ctx.lineTo(rx+rw,slY);ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // Label
+    if(overlayOpts.label){
+      ctx.font='bold 10px "Syncopate"';
+      const lbl=p.class.toUpperCase(),tw=ctx.measureText(lbl).width;
+      const lx=rx,ly=ry>24?ry-7:ry+rh+18;
+      ctx.fillStyle='rgba(3,5,8,0.88)';
+      ctx.fillRect(lx-2,ly-13,tw+8+(overlayOpts.conf?32:0),18);
+      ctx.fillStyle=col;ctx.fillText(lbl,lx+2,ly);
+      if(overlayOpts.conf){
+        ctx.fillStyle='rgba(255,255,255,0.6)';
+        ctx.font='8px "Share Tech Mono"';ctx.fillText(pct+'%',lx+tw+7,ly);
+      }
+    }
+
+    // Centerpoint
+    if(overlayOpts.center){
+      const cx=rx+rw/2,cy=ry+rh/2;
+      ctx.save();ctx.strokeStyle=col;ctx.lineWidth=1;ctx.shadowColor=col;ctx.shadowBlur=4;
+      ctx.beginPath();ctx.arc(cx,cy,3,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(cx-7,cy);ctx.lineTo(cx+7,cy);ctx.moveTo(cx,cy-7);ctx.lineTo(cx,cy+7);ctx.stroke();
+      ctx.restore();
+    }
+  });
+
+  // Keep animating for live mode
+  if(!staticDraw&&detMode==='live'&&stream){
+    animFrame=requestAnimationFrame(()=>drawDetections(preds,srcW,srcH,false));
+  }
+}
+
+function clearCanvas(){cancelAnimationFrame(animFrame);ctx.clearRect(0,0,canvas.width,canvas.height);}
+
+// FLOATING TOOLTIPS
+function clearTooltips(){ttLayer.innerHTML='';}
+function renderTooltips(preds,srcW,srcH){
+  clearTooltips();
+  if(!srcW||!srcH||!preds.length)return;
+  const{sx,sy,ox,oy}=getScaleOffset(srcW,srcH);
+
+  preds.forEach((p,i)=>{
+    const[x,y,w,h]=p.bbox;
+    const rx=x*sx+ox,ry=y*sy+oy,rw=w*sx,rh=h*sy;
+    const col=getColor(p.class);
+    const pct=Math.round(p.score*100),cat=getCat(p.class),dist=estimateDist(p.bbox,srcW,srcH);
+    const r=parseInt(col.slice(1,3),16)||0,g=parseInt(col.slice(3,5),16)||0,b=parseInt(col.slice(5,7),16)||0;
+    const threat=p.class==='person';
+    const tColor=threat?'#ff2d7a':'#00ff9d';
+    const tText=threat?'MONITOR':'SAFE';
+
+    const ttX=rx+rw/2;
+    const above=ry>90;
+    const ttY=above?ry-12:ry+rh+12;
+
+    const tt=document.createElement('div');
+    tt.className='ott';
+    tt.style.cssText=`left:${ttX}px;top:${ttY}px;transform:translateX(-50%) ${above?'translateY(-100%)':'translateY(0)'};animation-delay:${i*0.04}s;`;
+
+    tt.innerHTML=`<div class="ott-inner" style="border-color:${col};box-shadow:0 4px 20px rgba(${r},${g},${b},0.22);">
+      <div class="ott-name" style="color:${col}">${p.class.toUpperCase()}</div>
+      <div class="ott-row">
+        <span class="ott-chip" style="color:${col};border-color:rgba(${r},${g},${b},0.3);">${cat}</span>
+        <span class="ott-pct" style="color:${col}">${pct}%</span>
+        <span class="ott-chip" style="color:${tColor};border-color:rgba(${r},${g},${b},0.2);">${tText}</span>
+      </div>
+      <div class="ott-dist">${dist}</div>
+      ${above?`<div class="ott-arr-down" style="border-top-color:${col};opacity:0.55;"></div>`:`<div class="ott-arr-up" style="border-bottom-color:${col};opacity:0.55;"></div>`}
+    </div>`;
+    ttLayer.appendChild(tt);
+  });
+}
+
+// DETECTION LIST
+function updateDetList(preds,srcW,srcH){
+  const list=document.getElementById('det-list');
+  document.getElementById('det-count').textContent=preds.length+' ITEMS';
+  document.getElementById('badge-count').textContent=preds.length;
+  if(!preds.length){list.innerHTML='<div class="empty-msg">NO TARGETS ACQUIRED<br><span style="font-size:7px;opacity:0.5;">Adjust threshold or point camera at objects</span></div>';return;}
+  list.innerHTML=preds.map((p,i)=>{
+    const col=getColor(p.class),cat=getCat(p.class),pct=Math.round(p.score*100);
+    return`<div class="det-card" onclick="showDetail(${i})">
+      <div class="dct">
+        <div class="dcn" style="color:${col}">${p.class.toUpperCase()}</div>
+        <div><div class="dcc" style="color:${col}">${pct}%</div><div class="dccl">CONF</div></div>
+      </div>
+      <div class="cbar"><div class="cfill" style="width:${pct}%;background:${col}"></div></div>
+      <div class="dcm">${estimateDist(p.bbox,srcW,srcH)} · ${estimateSize(p.bbox,srcW,srcH)} FRAME</div>
+      <div class="dctags">
+        <span class="dtag dtag-i">${cat}</span>
+        ${pct>=80?'<span class="dtag dtag-s">HIGH CONF</span>':pct>=60?'<span class="dtag dtag-i">MED CONF</span>':'<span class="dtag dtag-w">LOW CONF</span>'}
+        ${p.class==='person'?'<span class="dtag dtag-w">PERSON</span>':''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateStats(preds){
+  document.getElementById('stat-obj').textContent=preds.length;
+  document.getElementById('stat-conf').textContent=preds.length?Math.round(preds.reduce((s,p)=>s+p.score,0)/preds.length*100)+'%':'--%';
+}
+
+// DETAIL MODAL
+function showDetail(idx){
+  const p=currentDetections[idx];if(!p)return;
+  const col=getColor(p.class),cat=getCat(p.class),pct=Math.round(p.score*100);
+  const srcW=stream?video.videoWidth:uploadImg.naturalWidth;
+  const srcH=stream?video.videoHeight:uploadImg.naturalHeight;
+  const t=document.getElementById('detail-title');
+  t.textContent=p.class.toUpperCase();t.style.color=col;
+  document.getElementById('detail-content').innerHTML=`
+    <div class="detail-grid">
+      <div class="df"><div class="dk">CATEGORY</div><div class="dv" style="color:${col}">${cat}</div></div>
+      <div class="df"><div class="dk">CONFIDENCE</div><div class="dv" style="color:${col}">${pct}%</div></div>
+      <div class="df"><div class="dk">DISTANCE EST.</div><div class="dv">${estimateDist(p.bbox,srcW,srcH)}</div></div>
+      <div class="df"><div class="dk">FRAME SIZE</div><div class="dv">${estimateSize(p.bbox,srcW,srcH)}</div></div>
+      <div class="df"><div class="dk">BBOX (PX)</div><div class="dv" style="font-size:10px">${p.bbox.map(v=>Math.round(v)).join(', ')}</div></div>
+      <div class="df"><div class="dk">STATUS</div><div class="dv" style="color:${p.class==='person'?'#ff2d7a':'#00ff9d'}">${p.class==='person'?'MONITOR':'SAFE'}</div></div>
+    </div>`;
+  document.getElementById('detail-popup').style.display='flex';
+}
+function closeDetail(){document.getElementById('detail-popup').style.display='none';}
+
+// HISTORY
+function addHistory(imgUrl,preds,w,h){
+  history.unshift({imgUrl,preds:[...preds],w,h,time:new Date().toLocaleTimeString(),count:preds.length});
+  if(history.length>20)history.pop();renderHistory();
+}
+function renderHistory(){
+  const list=document.getElementById('hist-list');
+  document.getElementById('hist-count').textContent=history.length+' SCANS';
+  if(!history.length){list.innerHTML='<div class="empty-msg">NO SCANS RECORDED</div>';return;}
+  list.innerHTML=history.map((h,i)=>`
+    <div class="hist-card" onclick="reloadHistory(${i})">
+      <img class="hist-thumb" src="${h.imgUrl}" alt="scan"/>
+      <div style="flex:1;overflow:hidden;">
+        <div class="hist-title">${h.count} TARGETS · ${h.time}</div>
+        <div class="hist-sub">${[...new Set(h.preds.map(p=>p.class))].slice(0,3).join(', ')||'NONE'}</div>
+      </div>
+    </div>`).join('');
+}
+function reloadHistory(i){
+  const item=history[i];currentDetections=item.preds;
+  uploadImg.src=item.imgUrl;uploadImg.style.display='block';video.style.display='none';
+  document.getElementById('idle-overlay').style.display='none';
+  document.getElementById('obj-badge').style.display='block';
+  setTimeout(()=>{
+    drawDetections(item.preds,item.w,item.h,true);
+    renderTooltips(item.preds,item.w,item.h);
+    updateDetList(item.preds,item.w,item.h);
+    updateStats(item.preds);switchTab('detections');
+  },100);
+}
+
+// CONTROLS
+function setDetMode(mode){
+  detMode=mode;
+  document.getElementById('btn-live').classList.toggle('act',mode==='live');
+  document.getElementById('btn-manual').classList.toggle('act',mode==='manual');
+  if(mode==='live'&&stream)startLiveDetection();
+  else stopLiveDetection();
+  notify('MODE: '+mode.toUpperCase());
+}
+function updateThresh(v){confThresh=v/100;document.getElementById('thresh-val').textContent=v+'%';}
+function toggleOverlay(k,btn){overlayOpts[k]=!overlayOpts[k];btn.classList.toggle('act',overlayOpts[k]);}
+function clearDetections(){currentDetections=[];clearCanvas();clearTooltips();updateDetList([],0,0);updateStats([]);notify('DETECTIONS CLEARED');}
+function clearHistory(){history=[];renderHistory();notify('HISTORY CLEARED');}
+function saveSnapshot(){
+  const hc=document.createElement('canvas');hc.width=canvas.width;hc.height=canvas.height;
+  const hx=hc.getContext('2d');
+  if(stream&&video.style.display!=='none')hx.drawImage(video,0,0,hc.width,hc.height);
+  else if(uploadImg.style.display!=='none')hx.drawImage(uploadImg,0,0,hc.width,hc.height);
+  hx.drawImage(canvas,0,0);
+  const a=document.createElement('a');a.download='UNREAL_'+Date.now()+'.png';a.href=hc.toDataURL();a.click();
+  notify('SNAPSHOT SAVED');
+}
+function exportReport(){
+  if(!currentDetections.length){notify('NO TARGETS TO EXPORT');return;}
+  const srcW=stream?video.videoWidth:uploadImg.naturalWidth,srcH=stream?video.videoHeight:uploadImg.naturalHeight;
+  const lines=['UNREAL VISION SYSTEM — DETECTION REPORT','Generated: '+new Date().toLocaleString(),'','--- TARGETS ---',''];
+  currentDetections.forEach((p,i)=>{lines.push(`[${i+1}] ${p.class.toUpperCase()}`,'  Confidence: '+Math.round(p.score*100)+'%','  Category: '+getCat(p.class),'  Distance: '+estimateDist(p.bbox,srcW,srcH),'  BBox: '+p.bbox.map(v=>Math.round(v)).join(', '),'');});
+  const a=document.createElement('a');a.download='UNREAL_report_'+Date.now()+'.txt';a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain'}));a.click();
+  notify('REPORT EXPORTED');
+}
+
+// TABS
+function switchTab(tab){
+  ['controls','detections','history'].forEach(t=>{
+    document.getElementById('tab-'+t).style.display=t===tab?(t==='controls'?'block':'flex'):'none';
+    document.getElementById('stab-'+t).classList.toggle('on',t===tab);
+  });
+}
+
+// NOTIFY
+function notify(msg){
+  const n=document.getElementById('notify');
+  n.textContent='[ '+msg+' ]';n.style.display='block';
+  clearTimeout(notify._t);notify._t=setTimeout(()=>n.style.display='none',2200);
+}
+function setStatus(msg){document.getElementById('status-msg').textContent=msg;}
+
+boot();
+</script>
+</body>
+</html>
