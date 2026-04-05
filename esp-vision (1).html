@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP Vision HUD</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#000;font-family:'Courier New',monospace;overflow:hidden;height:100vh;width:100vw}
+#wrap{position:relative;width:100vw;height:100vh;background:#000;display:flex;align-items:center;justify-content:center}
+#video{position:absolute;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .5s}
+#overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+#hud{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+#topbar{position:absolute;top:0;left:0;right:0;padding:10px 16px;display:flex;justify-content:space-between;align-items:flex-start;background:linear-gradient(to bottom,rgba(0,0,0,0.75),transparent)}
+#bottombar{position:absolute;bottom:0;left:0;right:0;padding:10px 16px;display:flex;justify-content:space-between;align-items:flex-end;background:linear-gradient(to top,rgba(0,0,0,0.75),transparent)}
+.hud-text{color:#00ff88;font-size:11px;letter-spacing:1.5px;text-shadow:0 0 8px #00ff8899}
+.hud-text.warn{color:#ff4444;text-shadow:0 0 8px #ff444499}
+.hud-text.amber{color:#ffaa00;text-shadow:0 0 8px #ffaa0099}
+#status{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#00ff88;font-size:14px;text-align:center;letter-spacing:2px;text-shadow:0 0 12px #00ff88;line-height:2}
+#ctrl{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:10;flex-wrap:wrap;justify-content:center}
+button{background:rgba(0,255,136,0.08);border:1px solid #00ff8877;color:#00ff88;font-family:'Courier New',monospace;font-size:11px;letter-spacing:1.5px;padding:8px 16px;cursor:pointer;transition:all .15s;text-shadow:0 0 6px #00ff8866}
+button:hover{background:rgba(0,255,136,0.22);border-color:#00ff88}
+button.active{background:rgba(0,255,136,0.28);border-color:#00ff88}
+button.danger{border-color:#ff444477;color:#ff4444;background:rgba(255,68,68,0.08)}
+button.danger:hover{background:rgba(255,68,68,0.2)}
+#info-list{font-size:10px;color:#00ff88;letter-spacing:.8px;text-shadow:0 0 4px #00ff8866}
+.info-row{padding:2px 0;border-bottom:1px solid rgba(0,255,136,0.12)}
+#capture-flash{position:absolute;top:0;left:0;width:100%;height:100%;background:white;opacity:0;pointer-events:none}
+#ocr-result{position:absolute;top:55px;left:16px;max-width:240px;font-size:10px;color:#ffaa00;letter-spacing:.8px;background:rgba(0,0,0,0.82);padding:8px 10px;border:1px solid rgba(255,170,0,0.35);display:none;line-height:1.6;z-index:5}
+#crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;opacity:0.35}
+#scan-line{position:absolute;top:0;left:0;width:100%;height:2px;background:linear-gradient(to right,transparent,#00ff8855,transparent);animation:scan 4s linear infinite;pointer-events:none}
+@keyframes scan{0%{top:0}100%{top:100%}}
+#corner-tl,#corner-tr,#corner-bl,#corner-br{position:absolute;width:20px;height:20px;pointer-events:none}
+#corner-tl{top:8px;left:8px;border-top:1px solid #00ff8866;border-left:1px solid #00ff8866}
+#corner-tr{top:8px;right:8px;border-top:1px solid #00ff8866;border-right:1px solid #00ff8866}
+#corner-bl{bottom:8px;left:8px;border-bottom:1px solid #00ff8866;border-left:1px solid #00ff8866}
+#corner-br{bottom:8px;right:8px;border-bottom:1px solid #00ff8866;border-right:1px solid #00ff8866}
+#detect-interval-wrap{position:absolute;top:55px;right:16px;font-size:10px;color:#00ff8899;letter-spacing:.8px}
+#detect-interval-wrap input[type=range]{width:100px;margin:4px 0;accent-color:#00ff88}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="overlay"></canvas>
+  <div id="scan-line"></div>
+  <div id="corner-tl"></div><div id="corner-tr"></div>
+  <div id="corner-bl"></div><div id="corner-br"></div>
+
+  <div id="hud">
+    <div id="topbar">
+      <div>
+        <div class="hud-text" id="fps-display">FPS: --</div>
+        <div class="hud-text" id="res-display" style="margin-top:3px">RES: --</div>
+        <div class="hud-text" id="detect-fps" style="margin-top:3px;opacity:.7">DET: --ms</div>
+      </div>
+      <div style="text-align:center">
+        <div class="hud-text" style="font-size:15px;letter-spacing:4px">◈ ESP VISION</div>
+        <div class="hud-text" id="obj-count" style="font-size:10px;margin-top:4px">OBJECTS: 0</div>
+        <div class="hud-text" id="mode-display" style="font-size:10px;margin-top:2px;opacity:.7">MODE: LIVE DETECT</div>
+      </div>
+      <div style="text-align:right">
+        <div class="hud-text" id="time-display">--:--:--</div>
+        <div class="hud-text" id="date-display" style="margin-top:3px;opacity:.7;font-size:10px">----/--/--</div>
+      </div>
+    </div>
+
+    <div id="bottombar">
+      <div id="info-list"></div>
+      <div style="text-align:right">
+        <div class="hud-text amber" id="alert-text"></div>
+      </div>
+    </div>
+
+    <div id="detect-interval-wrap">
+      <div>DETECT RATE</div>
+      <input type="range" min="80" max="1000" step="20" value="200" id="det-slider" oninput="detectInterval=+this.value;document.getElementById('det-val').textContent=this.value+'ms'">
+      <div id="det-val">200ms</div>
+    </div>
+
+    <div id="ocr-result"></div>
+  </div>
+
+  <svg id="crosshair" width="44" height="44" viewBox="0 0 44 44">
+    <line x1="22" y1="0" x2="22" y2="16" stroke="#00ff88" stroke-width="1"/>
+    <line x1="22" y1="28" x2="22" y2="44" stroke="#00ff88" stroke-width="1"/>
+    <line x1="0" y1="22" x2="16" y2="22" stroke="#00ff88" stroke-width="1"/>
+    <line x1="28" y1="22" x2="44" y2="22" stroke="#00ff88" stroke-width="1"/>
+    <circle cx="22" cy="22" r="3.5" fill="none" stroke="#00ff88" stroke-width="1"/>
+    <circle cx="22" cy="22" r="10" fill="none" stroke="#00ff88" stroke-width="0.4" stroke-dasharray="2 4"/>
+  </svg>
+
+  <div id="status">◈ ESP VISION SYSTEM<br><span style="font-size:11px;opacity:0.6;letter-spacing:1px">CLICK START TO INITIALIZE</span></div>
+  <div id="capture-flash"></div>
+
+  <div id="ctrl">
+    <button id="btn-start" onclick="startCamera()">▶ START</button>
+    <button id="btn-capture" onclick="captureFrame()" style="display:none">⊙ CAPTURE</button>
+    <button id="btn-esp" onclick="toggleESP()" class="active" style="display:none">ESP ON</button>
+    <button id="btn-ocr" onclick="triggerOCR()" style="display:none">◈ READ TEXT</button>
+    <button id="btn-flip" onclick="flipCamera()" style="display:none">⇄ FLIP</button>
+    <button id="btn-stop" onclick="stopCamera()" class="danger" style="display:none">■ STOP</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const fpsEl = document.getElementById('fps-display');
+const resEl = document.getElementById('res-display');
+const detectFpsEl = document.getElementById('detect-fps');
+const objCountEl = document.getElementById('obj-count');
+const timeEl = document.getElementById('time-display');
+const dateEl = document.getElementById('date-display');
+const infoListEl = document.getElementById('info-list');
+const alertEl = document.getElementById('alert-text');
+const ocrEl = document.getElementById('ocr-result');
+const flash = document.getElementById('capture-flash');
+
+let model = null;
+let running = false;
+let espOn = true;
+let detections = [];
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let fps = 0;
+let lastDetectTime = 0;
+let detectInterval = 200;
+let objectHistory = {};
+let rafId = null;
+let facingMode = 'environment';
+let stream = null;
+let detectLatency = 0;
+
+const COLORS = {
+  person:'#ff4455', car:'#00aaff', truck:'#ff8800', bus:'#ff8800',
+  bicycle:'#00ff88', motorcycle:'#00ddff', dog:'#ffff44', cat:'#ffff44',
+  cell_phone:'#bb88ff', laptop:'#bb88ff', backpack:'#ff88aa',
+  default:'#00ff88'
+};
+function getColor(cls){ return COLORS[cls] || COLORS.default; }
+
+function resize(){
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+async function startCamera(){
+  document.getElementById('btn-start').style.display = 'none';
+  statusEl.innerHTML = '◈ REQUESTING CAMERA...<br><span style="font-size:10px;opacity:.6">Allow permission in browser</span>';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:60,min:30}, facingMode },
+      audio: false
+    });
+    video.srcObject = stream;
+    video.style.opacity = '1';
+    await video.play();
+    try {
+      const tracks = stream.getVideoTracks();
+      const t = tracks.length ? tracks[0].getSettings() : {};
+      resEl.textContent = `RES: ${t.width||video.videoWidth||'--'}x${t.height||video.videoHeight||'--'}`;
+    } catch(te) {
+      resEl.textContent = `RES: ${video.videoWidth||'--'}x${video.videoHeight||'--'}`;
+    }
+    statusEl.innerHTML = '◈ LOADING AI MODEL...<br><span style="font-size:10px;opacity:.6">lite_mobilenet_v2</span>';
+    if(!model) model = await cocoSsd.load({base:'lite_mobilenet_v2'});
+    statusEl.textContent = '';
+    ['btn-capture','btn-esp','btn-ocr','btn-flip','btn-stop'].forEach(id=>{
+      document.getElementById(id).style.display = '';
+    });
+    running = true;
+    loop();
+  } catch(e) {
+    statusEl.innerHTML = `<span style="color:#ff4444">✗ ${e.message||'CAMERA ACCESS DENIED'}</span><br><span style="font-size:10px;opacity:.6">Allow camera permission and reload</span>`;
+    document.getElementById('btn-start').style.display = '';
+  }
+}
+
+function stopCamera(){
+  running = false;
+  if(rafId) cancelAnimationFrame(rafId);
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  video.style.opacity = '0';
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  statusEl.innerHTML = '◈ ESP VISION SYSTEM<br><span style="font-size:11px;opacity:.6">CLICK START TO INITIALIZE</span>';
+  ['btn-capture','btn-esp','btn-ocr','btn-flip','btn-stop'].forEach(id=>{
+    document.getElementById(id).style.display = 'none';
+  });
+  document.getElementById('btn-start').style.display = '';
+  detections = [];
+  objCountEl.textContent = 'OBJECTS: 0';
+  infoListEl.innerHTML = '';
+}
+
+async function flipCamera(){
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  running = false;
+  if(rafId) cancelAnimationFrame(rafId);
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  detections = [];
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:60,min:30}, facingMode },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    try {
+      const tracks = stream.getVideoTracks();
+      const t = tracks.length ? tracks[0].getSettings() : {};
+      resEl.textContent = `RES: ${t.width||video.videoWidth||'--'}x${t.height||video.videoHeight||'--'}`;
+    } catch(te) {
+      resEl.textContent = `RES: ${video.videoWidth||'--'}x${video.videoHeight||'--'}`;
+    }
+    running = true;
+    loop();
+  } catch(e){ facingMode = facingMode === 'user' ? 'environment' : 'user'; }
+}
+
+function estimateDist(w, h, cls){
+  const refW = {person:0.5, car:1.8, truck:2.5, bus:2.5, bicycle:0.6, motorcycle:0.8, default:0.4};
+  const ref = refW[cls] || refW.default;
+  const pxW = Math.max(w, h * 0.5);
+  const fovPx = canvas.width / 1.2;
+  const dist = (ref * fovPx) / Math.max(pxW, 1);
+  return Math.min(Math.max(dist, 0.2), 60).toFixed(1);
+}
+
+function trackSpeed(id, x, y, now){
+  if(!objectHistory[id]) objectHistory[id] = {x,y,t:now,speed:0,trail:[]};
+  const h = objectHistory[id];
+  const dt = (now - h.t) / 1000;
+  if(dt > 0.06){
+    const dx = x - h.x, dy = y - h.y;
+    const pxPerSec = Math.sqrt(dx*dx + dy*dy) / dt;
+    h.speed = h.speed * 0.65 + pxPerSec * 0.35;
+    h.trail.push({x, y});
+    if(h.trail.length > 14) h.trail.shift();
+    h.x = x; h.y = y; h.t = now;
+  }
+  return (h.speed * (canvas.width < 600 ? 0.05 : 0.028)).toFixed(1);
+}
+
+function drawESP(dets, now){
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if(!espOn || !dets.length) return;
+
+  const scaleX = canvas.width / (video.videoWidth || canvas.width);
+  const scaleY = canvas.height / (video.videoHeight || canvas.height);
+  const infoLines = [];
+
+  dets.forEach((d, i) => {
+    const [bx, by, bw, bh] = d.bbox;
+    const x = bx*scaleX, y = by*scaleY, w = bw*scaleX, h = bh*scaleY;
+    const cx = x + w/2, cy = y + h/2;
+    const color = getColor(d.class);
+    const conf = Math.round(d.score * 100);
+    const dist = estimateDist(w, h, d.class);
+    const id = `${d.class}_${i}`;
+    const spd = trackSpeed(id, cx, cy, now);
+    const distF = parseFloat(dist);
+
+    // Motion trail
+    const trail = objectHistory[id]?.trail || [];
+    if(trail.length > 1){
+      ctx.beginPath();
+      ctx.strokeStyle = color + '44';
+      ctx.lineWidth = 1.5;
+      ctx.moveTo(trail[0].x, trail[0].y);
+      trail.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+    }
+
+    // Filled bg rect (very faint)
+    ctx.fillStyle = color + '08';
+    ctx.fillRect(x, y, w, h);
+
+    // Full border faint
+    ctx.strokeStyle = color + '33';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([]);
+    ctx.strokeRect(x, y, w, h);
+
+    // Corner brackets
+    ctx.strokeStyle = color;
+    ctx.lineWidth = distF < 2 ? 2.5 : 1.8;
+    const cs = Math.min(12, w*0.2, h*0.2);
+    [[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([px,py]) => {
+      const sx = px === x ? 1 : -1, sy = py === y ? 1 : -1;
+      ctx.beginPath();
+      ctx.moveTo(px, py); ctx.lineTo(px + cs*sx, py);
+      ctx.moveTo(px, py); ctx.lineTo(px, py + cs*sy);
+      ctx.stroke();
+    });
+
+    // Center dot
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2, 0, Math.PI*2);
+    ctx.fill();
+
+    // Line to crosshair center
+    ctx.strokeStyle = color + '33';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([2, 5]);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(canvas.width/2, canvas.height/2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label box
+    const label = `${d.class.toUpperCase()}  ${conf}%`;
+    const sub = `${dist}m  |  ${spd} km/h`;
+    ctx.font = 'bold 10px Courier New';
+    const lw = Math.max(ctx.measureText(label).width, ctx.measureText(sub).width) + 14;
+    const lh = 32;
+    const lx = Math.min(x, canvas.width - lw - 2);
+    const ly = y - lh - 3 < 0 ? y + 3 : y - lh - 3;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(lx, ly, lw, lh);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(lx, ly, lw, lh);
+    // left accent bar
+    ctx.fillStyle = color;
+    ctx.fillRect(lx, ly, 2, lh);
+
+    ctx.fillStyle = color;
+    ctx.font = 'bold 10px Courier New';
+    ctx.fillText(label, lx+8, ly+12);
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.font = '9px Courier New';
+    ctx.fillText(sub, lx+8, ly+25);
+
+    // Close proximity pulse ring
+    if(distF < 2){
+      ctx.strokeStyle = color + '55';
+      ctx.lineWidth = 1;
+      const pulse = ((now % 800) / 800);
+      const rr = Math.max(w,h)/2 * (1 + pulse * 0.3);
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr, 0, Math.PI*2);
+      ctx.stroke();
+    }
+
+    infoLines.push(`<div class="info-row">${d.class.toUpperCase()}: ${dist}m  ${spd}km/h  ${conf}%</div>`);
+  });
+
+  infoListEl.innerHTML = infoLines.slice(0,6).join('');
+  objCountEl.textContent = `OBJECTS: ${dets.length}`;
+  const close = dets.filter(d => {
+    const [,, bw, bh] = d.bbox;
+    return parseFloat(estimateDist(bw*(canvas.width/video.videoWidth||1), bh*(canvas.height/video.videoHeight||1), d.class)) < 2;
+  });
+  alertEl.textContent = close.length ? `⚠ CLOSE: ${close.map(d=>d.class.toUpperCase()).join(', ')}` : '';
+}
+
+function loop(ts = 0){
+  if(!running) return;
+  rafId = requestAnimationFrame(loop);
+  frameCount++;
+  const now = performance.now();
+
+  if(now - lastFpsTime >= 500){
+    fps = Math.round(frameCount / ((now - lastFpsTime) / 1000));
+    fpsEl.textContent = `FPS: ${fps}`;
+    fpsEl.className = 'hud-text' + (fps < 20 ? ' warn' : fps < 35 ? ' amber' : '');
+    frameCount = 0; lastFpsTime = now;
+  }
+
+  const d = new Date();
+  timeEl.textContent = d.toTimeString().slice(0,8);
+  dateEl.textContent = d.toISOString().slice(0,10);
+
+  if(model && video.readyState >= 2 && now - lastDetectTime > detectInterval){
+    const t0 = performance.now();
+    lastDetectTime = now;
+    model.detect(video).then(r => {
+      detections = r;
+      detectLatency = Math.round(performance.now() - t0);
+      detectFpsEl.textContent = `DET: ${detectLatency}ms`;
+    }).catch(() => {});
+  }
+
+  drawESP(detections, now);
+}
+
+function toggleESP(){
+  espOn = !espOn;
+  const b = document.getElementById('btn-esp');
+  b.textContent = espOn ? 'ESP ON' : 'ESP OFF';
+  b.className = espOn ? 'active' : '';
+  if(!espOn){ ctx.clearRect(0,0,canvas.width,canvas.height); objCountEl.textContent='OBJECTS: 0'; infoListEl.innerHTML=''; }
+}
+
+function captureFrame(){
+  const tmp = document.createElement('canvas');
+  tmp.width = video.videoWidth; tmp.height = video.videoHeight;
+  const tc = tmp.getContext('2d');
+  tc.drawImage(video, 0, 0);
+  // Draw detections on capture
+  const scaleX = tmp.width / canvas.width, scaleY = tmp.height / canvas.height;
+  tc.drawImage(canvas, 0, 0, tmp.width, tmp.height);
+  const url = tmp.toDataURL('image/jpeg', 0.93);
+  flash.style.transition = 'none'; flash.style.opacity = '1';
+  setTimeout(() => { flash.style.transition = 'opacity .35s'; flash.style.opacity = '0'; }, 80);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `esp-capture-${Date.now()}.jpg`;
+  a.click();
+}
+
+async function triggerOCR(){
+  if(!video.videoWidth) return;
+  const tmp = document.createElement('canvas');
+  tmp.width = video.videoWidth; tmp.height = video.videoHeight;
+  tmp.getContext('2d').drawImage(video, 0, 0);
+  const b64 = tmp.toDataURL('image/jpeg', 0.88).split(',')[1];
+  ocrEl.style.display = 'block';
+  ocrEl.innerHTML = '◈ SCANNING FRAME...<br><span style="opacity:.6;font-size:9px">EXTRACTING TEXT & DATA</span>';
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        messages:[{role:'user', content:[
+          {type:'image', source:{type:'base64', media_type:'image/jpeg', data:b64}},
+          {type:'text', text:'You are an OCR and object analysis system. Extract ALL visible text from this image including: license plates, signs, labels, numbers, brand names, street names, any written text. Also identify any notable objects. Format your response as a clean list, one item per line, prefixed with its type like "PLATE:", "SIGN:", "TEXT:", "OBJECT:". If nothing found say NONE.'}
+        ]}]
+      })
+    });
+    const data = await resp.json();
+    const text = data.content?.map(c=>c.text||'').join('') || 'NO RESPONSE';
+    ocrEl.innerHTML = `<div style="color:#ffaa00;margin-bottom:5px;letter-spacing:2px">◈ SCAN RESULT</div>${text.split('\n').filter(Boolean).map(l=>`<div style="color:#fff;opacity:.9;margin:1px 0">${l}</div>`).join('')}`;
+    setTimeout(() => { ocrEl.style.display = 'none'; }, 10000);
+  } catch(e) {
+    ocrEl.innerHTML = `<span style="color:#ff4444">✗ OCR ERROR<br><small>${e.message||'API unavailable'}</small></span>`;
+    setTimeout(() => { ocrEl.style.display = 'none'; }, 5000);
+  }
+}
+</script>
+</body>
+</html>
